@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime, func
 from sqlalchemy.orm import declarative_base
+from sqlalchemy.dialects.postgresql import JSONB
 
 Base = declarative_base()
 
@@ -14,7 +15,7 @@ class SysDashboard(Base):
     icon_name = Column(String(50), default="ph-squares-four")
     layout_type = Column(String(50), default="GRID")
     refresh_rate_sec = Column(Integer, default=0)
-    theme_config = Column(Text, default='{"bg": "#17151C", "accent": "#AAA2B3", "card_bg": "#292531"}')
+    theme_config = Column(JSONB, default={"bg": "#17151C", "accent": "#AAA2B3", "card_bg": "#292531"})
     is_public = Column(Boolean, default=True)
     created_by = Column(String(100), default="admin")
     # اصلاح شده:

@@ -8,7 +8,15 @@ class CamelModel(BaseModel):
         populate_by_name=True,
         from_attributes=True,
     )
-
+class DashboardCreateSchema(CamelModel):
+    dashboard_code: str
+    title: str
+    description: Optional[str] = None
+    icon_name: Optional[str] = "ph-squares-four"
+    layout_type: Optional[str] = "GRID"
+    refresh_rate_sec: int = 30
+    theme_config: Any  # چون ممکن است رشته باشد یا دیکشنری
+    is_public: bool = True
 class SysDashboardSchema(CamelModel):
     dashboard_id: int
     dashboard_code: str
