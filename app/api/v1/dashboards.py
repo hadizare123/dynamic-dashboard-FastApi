@@ -79,7 +79,7 @@ def _serialize_widget(w):
         "gridHeight": w.grid_height,
         "widgetProps": _parse_json_object(w.widget_props),
         "sortOrder": w.sort_order,
-        "isVisible": getattr(w, "is_visible", None) or getattr(w, "isVisible", None),
+        "isVisible": w.is_visible,
         "createdAt": getattr(w, "created_at", None) or getattr(w, "createdAt", None),
     }
 
@@ -286,3 +286,109 @@ def get_dashboard_full_details(dashboard_id: int, db: Session = Depends(get_db))
     return {"dashboard": _serialize_dashboard(dashboard), "widgets": widgets_response}
 
 
+
+
+# Widget administration uses the same router and database session as dashboards.
+from typing import Literal
+from pydantic import ConfigDict, field_validator, model_validator
+from pydantic.alias_generators import to_camel
+
+
+class WidgetWriteRequest(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    dashboard_id: int = Field(gt=0)
+    query_id: int = Field(gt=0)
+    widget_title: str = Field(min_length=1, max_length=150)
+    widget_type: Literal['TABLE', 'KPI', 'CHART_BAR', 'CHART_LINE', 'CHART_PIE'] = 'TABLE'
+    grid_pos_x: int = Field(default=0, ge=0, le=11)
+    grid_pos_y: int = Field(default=0, ge=0)
+    grid_width: int = Field(default=6, ge=1, le=12)
+    grid_height: int = Field(default=4, ge=1)
+    widget_props: dict = Field(default_factory=dict)
+    sort_order: int = 0
+    is_visible: bool = True
+
+    @field_validator('widget_title')
+    @classmethod
+    def validate_title(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError('عنوان ویجت نمی‌تواند خالی باشد.')
+        return value
+
+    @model_validator(mode='after')
+    def validate_grid(self):
+        if self.grid_pos_x + self.grid_width > 12:
+            raise ValueError('موقعیت و عرض ویجت از ۱۲ ستون بیشتر است.')
+        return self
+
+
+def _widget_or_404(widget_id, db):
+    widget = db.query(SysDashboardWidget).filter(SysDashboardWidget.widget_id == widget_id).first()
+    if widget is None:
+        raise HTTPException(status_code=404, detail='ویجت پیدا نشد.')
+    return widget
+
+
+def _widget_values(payload, db, existing=None):
+    dashboard = db.query(SysDashboard).filter(SysDashboard.dashboard_id == payload.dashboard_id).first()
+    if dashboard is None:
+        raise HTTPException(status_code=422, detail='داشبورد انتخاب‌شده پیدا نشد.')
+    query = db.query(SysDashboardQuery).filter(SysDashboardQuery.query_id == payload.query_id).first()
+    if query is None:
+        raise HTTPException(status_code=422, detail='کوئری انتخاب‌شده پیدا نشد.')
+    if not query.is_active and (existing is None or existing.query_id != payload.query_id):
+        raise HTTPException(status_code=422, detail='یک کوئری فعال انتخاب کنید.')
+    values = payload.model_dump()
+    values['widget_props'] = json.dumps(payload.widget_props, ensure_ascii=False)
+    return values
+
+
+def _commit_widget(db, widget=None):
+    try:
+        db.commit()
+        if widget is not None:
+            db.refresh(widget)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail='عملیات به دلیل وابستگی اطلاعات انجام نشد.')
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail='خطا در ذخیره اطلاعات ویجت.')
+
+
+@router.get('/api/admin/dashboard/widgets/dashboards')
+def list_widget_dashboards(db: Session = Depends(get_db)):
+    return list_dashboards(db)
+
+
+@router.get('/api/admin/dashboard/widgets')
+def list_widgets(db: Session = Depends(get_db)):
+    widgets = db.query(SysDashboardWidget).order_by(SysDashboardWidget.widget_id.desc()).all()
+    return [_serialize_widget(widget) for widget in widgets]
+
+
+@router.post('/api/admin/dashboard/widgets', status_code=201)
+def create_widget(payload: WidgetWriteRequest, db: Session = Depends(get_db)):
+    widget = SysDashboardWidget(**_widget_values(payload, db))
+    db.add(widget)
+    _commit_widget(db, widget)
+    return _serialize_widget(widget)
+
+
+@router.put('/api/admin/dashboard/widgets/{widget_id}')
+def update_widget(widget_id: int, payload: WidgetWriteRequest, db: Session = Depends(get_db)):
+    widget = _widget_or_404(widget_id, db)
+    for key, value in _widget_values(payload, db, existing=widget).items():
+        setattr(widget, key, value)
+    _commit_widget(db, widget)
+    return _serialize_widget(widget)
+
+
+@router.delete('/api/admin/dashboard/widgets/{widget_id}')
+def delete_widget(widget_id: int, db: Session = Depends(get_db)):
+    widget = _widget_or_404(widget_id, db)
+    db.delete(widget)
+    _commit_widget(db)
+    return {'ok': True, 'deleted_widget_id': widget_id}
