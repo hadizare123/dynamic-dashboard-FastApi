@@ -242,12 +242,7 @@ def get_dashboard_full_details(dashboard_id: int, db: Session = Depends(get_db))
     if not dashboard:
         raise HTTPException(status_code=404, detail="Dashboard not found")
 
-    widgets = (
-        db.query(SysDashboardWidget)
-        .filter(SysDashboardWidget.dashboard_id == dashboard_id)
-        .order_by(SysDashboardWidget.sort_order.asc())
-        .all()
-    )
+    widgets = db.query(SysDashboardWidget).filter(SysDashboardWidget.dashboard_id == dashboard_id).order_by(SysDashboardWidget.sort_order.asc()).all()
 
     query_service = QueryExecutionService()
     widgets_response = []
@@ -257,29 +252,33 @@ def get_dashboard_full_details(dashboard_id: int, db: Session = Depends(get_db))
             "widget": _serialize_widget(widget),
             "data": [],
             "columns": [],
-            "status": "OK",
+            "status": "OK"
         }
 
         if not widget.query_id:
             w_res["status"] = "NO_QUERY"
-        else:
-            query_obj = (
-                db.query(SysDashboardQuery)
-                .filter(SysDashboardQuery.query_id == widget.query_id)
-                .first()
-            )
+            widgets_response.append(w_res)
+            continue
+
+        try:
+            # ⭐ مهم: خواندن کوئری و اجرای آن داخل یک try-except امن قرار گیرد
+            query_obj = db.query(SysDashboardQuery).filter(SysDashboardQuery.query_id == widget.query_id).first()
             if not query_obj:
                 w_res["status"] = "NO_QUERY"
-            elif not getattr(query_obj, "is_active", True):
+            elif not getattr(query_obj, 'is_active', True):
                 w_res["status"] = "INACTIVE"
             else:
-                try:
-                    results = query_service.execute_query(db, query_obj)
-                    w_res["data"] = results
-                    w_res["columns"] = list(results[0].keys()) if results else []
-                except Exception as e:
-                    w_res["status"] = "ERROR"
-                    w_res["error"] = str(e)
+                results = query_service.execute_query(db, query_obj)
+                w_res["data"] = results
+                w_res["columns"] = list(results[0].keys()) if results else []
+        except Exception as e:
+            # 🔴 هر خطایی داد (چه در lookup و چه در execute)، تراکنش فوری ریست شود
+            db.rollback()
+            import traceback
+            traceback.print_exc()
+
+            w_res["status"] = "ERROR"
+            w_res["error"] = str(e)
 
         widgets_response.append(w_res)
 

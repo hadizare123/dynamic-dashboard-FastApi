@@ -10,7 +10,6 @@ class SysDataSource(Base):
 
     source_id = Column(Integer, primary_key=True, index=True)
     source_key = Column(String(50), nullable=False, unique=True)
-    code = Column(String(50))
     display_name = Column(String(100), nullable=False)
     db_type = Column(String(50), nullable=False)
     jdbc_url = Column(Text, nullable=False)
