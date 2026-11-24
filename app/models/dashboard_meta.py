@@ -35,7 +35,7 @@ class SysDashboardWidget(Base):
     grid_pos_y = Column(Integer, default=0)
     grid_width = Column(Integer, default=6)
     grid_height = Column(Integer, default=4)
-    widget_props = Column(Text, default="{}")
+    widget_props = Column(JSONB, default=dict)
     sort_order = Column(Integer, default=0)
     is_visible = Column("is_visible", Boolean, default=True)
     # اصلاح شده:
@@ -51,7 +51,6 @@ class SysDashboardQuery(Base):
     report_title = Column(String(255), nullable=False)
     description = Column(Text)
     sql_text = Column(Text, nullable=False)
-    chart_type = Column(String(50), default="TABLE")
     is_active = Column("is_active", Boolean, default=True)
     # اصلاح شده:
     created_at = Column("created_at", DateTime, server_default=func.now())

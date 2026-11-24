@@ -27,7 +27,6 @@ class QuerySchema(BaseModel):
     report_title: str
     description: Optional[str] = None
     sql_text: str
-    chart_type: str
     is_active: bool = True
 
 

@@ -339,9 +339,7 @@ def _widget_values(payload, db, existing=None):
         raise HTTPException(status_code=422, detail='کوئری انتخاب‌شده پیدا نشد.')
     if not query.is_active and (existing is None or existing.query_id != payload.query_id):
         raise HTTPException(status_code=422, detail='یک کوئری فعال انتخاب کنید.')
-    values = payload.model_dump()
-    values['widget_props'] = json.dumps(payload.widget_props, ensure_ascii=False)
-    return values
+    return payload.model_dump()
 
 
 def _commit_widget(db, widget=None):
