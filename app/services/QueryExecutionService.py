@@ -3,7 +3,7 @@ from sqlalchemy import create_engine, text
 from app.models.sys_data_source import SysDataSource
 
 class QueryExecutionService:
-    def execute_query(self, db_meta, query_obj):
+    def execute_query(self, db_meta, query_obj, *, columns_only=False):
         """
         اجرای کوئری‌های بیزینسی روی دیتاسورس‌های هدف با پشتیبانی از Pool،
         احراز هویت استاندارد و تنظیمات Timeout امن برای PostgreSQL.
@@ -56,15 +56,20 @@ class QueryExecutionService:
         try:
             # ۵. اجرای کوئری در بستر یک Transaction با SET LOCAL امن
             with engine.begin() as conn:
+                conn.exec_driver_sql("SET TRANSACTION READ ONLY")
                 # استفاده از مقدار امن‌سازی شده و تبدیل شده به عدد صحیح (جلوگیری از خطای syntax در PG)
                 conn.execute(text(f"SET LOCAL statement_timeout = {timeout_ms}"))
 
                 # اجرای کوئری اصلی ویجت
                 sql_text = query_obj.sql_text.strip()
-                result = conn.execute(text(sql_text))
+                with conn.execution_options(stream_results=True).execute(text(sql_text)) as result:
+                    columns = list(result.keys())
+                    if len(columns) != len(set(columns)):
+                        raise ValueError("نام ستون‌های خروجی تکراری است؛ برای هر ستون نام مستعار یکتا تعیین کنید.")
+                    rows = [] if columns_only else [dict(row._mapping) for row in result]
+                    return columns, rows
 
                 # ۶. تبدیل نتایج به لیست دیکشنری برای استفاده در لایه‌های جلو
-                return [dict(row._mapping) for row in result]
 
         finally:
             # آزادسازی منابع انجین موقت

@@ -36,6 +36,7 @@ class SysDashboardWidget(Base):
     grid_width = Column(Integer, default=6)
     grid_height = Column(Integer, default=4)
     widget_props = Column(JSONB, default=dict)
+    column_titles = Column(JSONB, nullable=False, default=dict, server_default='{}')
     sort_order = Column(Integer, default=0)
     is_visible = Column("is_visible", Boolean, default=True)
     # اصلاح شده:

@@ -78,6 +78,7 @@ def _serialize_widget(w):
         "gridWidth": w.grid_width,
         "gridHeight": w.grid_height,
         "widgetProps": _parse_json_object(w.widget_props),
+        "columnTitles": w.column_titles or {},
         "sortOrder": w.sort_order,
         "isVisible": w.is_visible,
         "createdAt": getattr(w, "created_at", None) or getattr(w, "createdAt", None),
@@ -255,6 +256,11 @@ def get_dashboard_full_details(dashboard_id: int, db: Session = Depends(get_db))
             "status": "OK"
         }
 
+        if widget.is_visible is False:
+            w_res["status"] = "HIDDEN"
+            widgets_response.append(w_res)
+            continue
+
         if not widget.query_id:
             w_res["status"] = "NO_QUERY"
             widgets_response.append(w_res)
@@ -268,9 +274,7 @@ def get_dashboard_full_details(dashboard_id: int, db: Session = Depends(get_db))
             elif not getattr(query_obj, 'is_active', True):
                 w_res["status"] = "INACTIVE"
             else:
-                results = query_service.execute_query(db, query_obj)
-                w_res["data"] = results
-                w_res["columns"] = list(results[0].keys()) if results else []
+                w_res["columns"], w_res["data"] = query_service.execute_query(db, query_obj)
         except Exception as e:
             # 🔴 هر خطایی داد (چه در lookup و چه در execute)، تراکنش فوری ریست شود
             db.rollback()
@@ -305,6 +309,7 @@ class WidgetWriteRequest(BaseModel):
     grid_width: int = Field(default=6, ge=1, le=12)
     grid_height: int = Field(default=4, ge=1)
     widget_props: dict = Field(default_factory=dict)
+    column_titles: dict[str, str] = Field(default_factory=dict)
     sort_order: int = 0
     is_visible: bool = True
 
@@ -339,7 +344,10 @@ def _widget_values(payload, db, existing=None):
         raise HTTPException(status_code=422, detail='کوئری انتخاب‌شده پیدا نشد.')
     if not query.is_active and (existing is None or existing.query_id != payload.query_id):
         raise HTTPException(status_code=422, detail='یک کوئری فعال انتخاب کنید.')
-    return payload.model_dump()
+    values = payload.model_dump()
+    if existing and 'column_titles' not in payload.model_fields_set and existing.query_id == payload.query_id:
+        values.pop('column_titles')
+    return values
 
 
 def _commit_widget(db, widget=None):

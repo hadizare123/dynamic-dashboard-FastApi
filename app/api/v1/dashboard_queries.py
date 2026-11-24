@@ -9,6 +9,7 @@ from app.models.sys_data_source import SysDataSource
 from app.Directory.database import get_db
 
 router = APIRouter(prefix="/api/admin/dashboard/queries", tags=["Dashboard Queries"])
+from app.services.QueryExecutionService import QueryExecutionService
 
 
 # ---------- Schemas ----------
@@ -54,6 +55,18 @@ def get_query(query_id: int, db: Session = Depends(get_db)):
     if not db_query:
         raise HTTPException(status_code=404, detail="Query not found")
     return db_query
+
+
+@router.get("/{query_id}/columns", response_model=List[str])
+def get_query_columns(query_id: int, db: Session = Depends(get_db)):
+    query = get_query(query_id, db)
+    try:
+        columns, _ = QueryExecutionService().execute_query(db, query, columns_only=True)
+        return columns
+    except ValueError as exc:
+        raise HTTPException(422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(422, detail="خواندن ستون‌های کوئری امکان‌پذیر نیست.") from exc
 
 
 @router.post("", response_model=QueryResponse)
