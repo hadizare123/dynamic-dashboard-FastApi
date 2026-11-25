@@ -27,7 +27,7 @@ class SysDashboardWidget(Base):
     __table_args__ = {"schema": "dashboard_meta"}
 
     widget_id = Column(Integer, primary_key=True)
-    dashboard_id = Column(Integer, nullable=False)
+    dashboard_id = Column(Integer, nullable=True)
     query_id = Column(Integer, nullable=False)
     widget_title = Column(String(150))
     widget_type = Column(String(50), nullable=False)

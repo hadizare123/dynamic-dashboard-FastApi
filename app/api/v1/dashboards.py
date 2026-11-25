@@ -300,7 +300,7 @@ from pydantic.alias_generators import to_camel
 class WidgetWriteRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
-    dashboard_id: int = Field(gt=0)
+    dashboard_id: Optional[int] = Field(default=None, gt=0)
     query_id: int = Field(gt=0)
     widget_title: str = Field(min_length=1, max_length=150)
     widget_type: Literal['TABLE', 'KPI', 'CHART_BAR', 'CHART_LINE', 'CHART_PIE'] = 'TABLE'
@@ -336,8 +336,7 @@ def _widget_or_404(widget_id, db):
 
 
 def _widget_values(payload, db, existing=None):
-    dashboard = db.query(SysDashboard).filter(SysDashboard.dashboard_id == payload.dashboard_id).first()
-    if dashboard is None:
+    if payload.dashboard_id is not None and db.get(SysDashboard, payload.dashboard_id) is None:
         raise HTTPException(status_code=422, detail='داشبورد انتخاب‌شده پیدا نشد.')
     query = db.query(SysDashboardQuery).filter(SysDashboardQuery.query_id == payload.query_id).first()
     if query is None:
@@ -366,6 +365,62 @@ def _commit_widget(db, widget=None):
 @router.get('/api/admin/dashboard/widgets/dashboards')
 def list_widget_dashboards(db: Session = Depends(get_db)):
     return list_dashboards(db)
+
+
+class DesignTile(BaseModel):
+    id: int = Field(gt=0)
+    x: int = Field(ge=0, lt=12)
+    y: int = Field(ge=0)
+    width: int = Field(ge=1, le=12)
+    height: int = Field(ge=1)
+
+
+class DesignWrite(BaseModel):
+    dashboard_id: Optional[int] = None
+    title: str = Field(min_length=1, max_length=100)
+    tiles: list[DesignTile]
+    original_ids: list[int] = Field(default_factory=list)
+
+
+@router.post('/api/admin/dashboard/design')
+def save_design(payload: DesignWrite, db: Session = Depends(get_db)):
+    from uuid import uuid4
+    tiles = payload.tiles
+    ids = {tile.id for tile in tiles}
+    if not payload.title.strip() or len(ids) != len(tiles):
+        raise HTTPException(422, 'عنوان یا فهرست ویجت‌ها معتبر نیست.')
+    for index, tile in enumerate(tiles):
+        if tile.x + tile.width > 12 or any(
+            tile.x < other.x + other.width and other.x < tile.x + tile.width
+            and tile.y < other.y + other.height and other.y < tile.y + tile.height
+            for other in tiles[:index]
+        ):
+            raise HTTPException(422, 'محدودهٔ ویجت‌ها باید جدا و داخل شبکه باشد.')
+    if payload.dashboard_id is None:
+        dashboard = SysDashboard(dashboard_code='design-' + uuid4().hex, layout_type='ADVANCED')
+        db.add(dashboard)
+    else:
+        dashboard = db.query(SysDashboard).filter_by(dashboard_id=payload.dashboard_id, layout_type='ADVANCED').with_for_update().first()
+        if dashboard is None:
+            raise HTTPException(404, 'طراحی پیدا نشد.')
+    dashboard.title = payload.title.strip()
+    db.flush()
+    rows = db.query(SysDashboardWidget).filter(
+        (SysDashboardWidget.dashboard_id == dashboard.dashboard_id) | SysDashboardWidget.widget_id.in_(ids)
+    ).order_by(SysDashboardWidget.widget_id).with_for_update().all()
+    current = {row.widget_id for row in rows if row.dashboard_id == dashboard.dashboard_id}
+    available = {row.widget_id: row for row in rows if row.dashboard_id in (None, dashboard.dashboard_id)}
+    if current != set(payload.original_ids) or not ids.issubset(available):
+        raise HTTPException(409, 'فهرست ویجت‌ها تغییر کرده؛ طراحی را دوباره باز کنید.')
+    for widget_id in current - ids:
+        available[widget_id].dashboard_id = None
+    for tile in tiles:
+        row = available[tile.id]
+        row.dashboard_id = dashboard.dashboard_id
+        row.grid_pos_x, row.grid_pos_y = tile.x, tile.y
+        row.grid_width, row.grid_height = tile.width, tile.height
+    _commit_widget(db)
+    return {'dashboardId': dashboard.dashboard_id}
 
 
 @router.get('/api/admin/dashboard/widgets')
